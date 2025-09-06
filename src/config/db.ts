@@ -34,8 +34,6 @@ class PrismaClientWithRetry extends PrismaClient {
   }
 }
 
-const prisma = new PrismaClientWithRetry({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-});
+const prisma = new PrismaClientWithRetry();
 
 export default prisma;

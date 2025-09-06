@@ -1,90 +1,150 @@
-import { Router, Request, Response } from 'express';
+import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { User } from '../models/User';
-import { generateToken } from '../middleware/auth';
-import { validateSignup, validateLogin } from '../middleware/validation';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+import prisma from '../config/db';
+import { jwtConfig } from '../config/env';
 
-const router = Router();
+const router = express.Router();
 
-// POST /auth/signup - Create new user
-router.post('/signup', validateSignup, async (req: Request, res: Response) => {
+// Validation schemas
+const signupSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+// Signup route
+router.post('/signup', async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password } = signupSchema.parse(req.body);
 
     // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+    });
+
     if (existingUser) {
-      return res.status(400).json({ error: 'User with this email already exists' });
+      return res.status(400).json({
+        success: false,
+        message: 'User with this email already exists',
+      });
     }
 
     // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Split name into first and last name
-    const nameParts = name.trim().split(' ');
-    const firstName = nameParts[0];
-    const lastName = nameParts.slice(1).join(' ') || '';
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create user
-    const user = await User.create({
-      username: email.split('@')[0], // Use email prefix as username
-      email,
-      password: hashedPassword,
-      firstName,
-      lastName,
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+      },
     });
 
     // Generate JWT token
-    const token = generateToken(user.id);
-
-    // Return user data without password
-    const userResponse = user.toJSON();
-    delete (userResponse as any).password;
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      jwtConfig.secret,
+      { expiresIn: jwtConfig.expiresIn }
+    );
 
     res.status(201).json({
+      success: true,
       message: 'User created successfully',
-      user: userResponse,
-      token
+      data: {
+        user,
+        token,
+      },
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
     console.error('Signup error:', error);
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// POST /auth/login - Login user
-router.post('/login', validateLogin, async (req: Request, res: Response) => {
+// Login route
+router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = loginSchema.parse(req.body);
 
     // Find user by email
-    const user = await User.findOne({ where: { email } });
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
     if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password',
+      });
     }
 
     // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password',
+      });
     }
 
     // Generate JWT token
-    const token = generateToken(user.id);
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      jwtConfig.secret,
+      { expiresIn: jwtConfig.expiresIn }
+    );
 
     // Return user data without password
-    const userResponse = user.toJSON();
-    delete (userResponse as any).password;
+    const { password: _, ...userWithoutPassword } = user;
 
     res.json({
+      success: true,
       message: 'Login successful',
-      user: userResponse,
-      token
+      data: {
+        user: userWithoutPassword,
+        token,
+      },
     });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Failed to login' });
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
