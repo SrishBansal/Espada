@@ -176,54 +176,63 @@ const ProjectDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* Tasks */}
-          <div className="bg-white shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Tasks</h2>
-              {tasks.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-500">No tasks yet. Create your first task to get started.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {tasks.map((task) => (
-                    <div key={task.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-medium text-gray-900">{task.title}</h3>
-                          <p className="mt-1 text-sm text-gray-600">{task.description}</p>
-                          <div className="mt-2 flex items-center space-x-4">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getTaskStatusColor(task.status)}`}>
-                              {task.status}
-                            </span>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                              {task.priority}
-                            </span>
-                            {task.dueDate && (
-                              <span className="text-xs text-gray-500">
-                                Due: {new Date(task.dueDate).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {task.assignee && (
-                          <div className="flex items-center">
-                            <div className="h-6 w-6 rounded-full bg-gray-400 flex items-center justify-center">
-                              <span className="text-xs font-medium text-white">
-                                {task.assignee.firstName?.charAt(0)}{task.assignee.lastName?.charAt(0)}
-                              </span>
-                            </div>
-                            <span className="ml-2 text-sm text-gray-600">
-                              {task.assignee.firstName} {task.assignee.lastName}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* Mobile Tabs */}
+          <div className="md:hidden mb-6">
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  onClick={() => setActiveTab('tasks')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'tasks'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Tasks
+                </button>
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'chat'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Chat
+                </button>
+              </nav>
             </div>
+          </div>
+
+          {/* Desktop Layout */}
+          <div className="hidden md:flex gap-6">
+            {/* Tasks Section */}
+            <div className="flex-1">
+              <KanbanBoard
+                tasks={tasks}
+                projectId={parseInt(id!)}
+                onTaskUpdate={handleTaskUpdate}
+              />
+            </div>
+
+            {/* Chat Section */}
+            <div className="w-96">
+              <ChatBox projectId={parseInt(id!)} />
+            </div>
+          </div>
+
+          {/* Mobile Layout */}
+          <div className="md:hidden">
+            {activeTab === 'tasks' && (
+              <KanbanBoard
+                tasks={tasks}
+                projectId={parseInt(id!)}
+                onTaskUpdate={handleTaskUpdate}
+              />
+            )}
+            {activeTab === 'chat' && (
+              <ChatBox projectId={parseInt(id!)} />
+            )}
           </div>
         </div>
       </div>
