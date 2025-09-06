@@ -5,11 +5,11 @@ import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
-import { createError } from 'http-errors';
+import createError from 'http-errors';
 import { logger } from './middleware/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { authenticate } from './middleware/auth';
-import { env, corsConfig } from './config/env';
+import { env, corsConfig, serverConfig } from './config/env';
 import prisma from './config/db';
 
 // Import routes
@@ -70,22 +70,6 @@ app.use((req, res, next) => {
 
 // Error handling middleware
 app.use(errorHandler);
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Routes
-app.use('/auth', authRoutes);
-app.use('/projects', projectRoutes);
-app.use('/tasks', taskRoutes);
-app.use('/api/messages', messageRoutes);
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'SynergySphere Backend is running!' });
-});
 
 // Socket.IO setup for real-time messaging
 const messagesNamespace = io.of('/realtime');
@@ -163,7 +147,7 @@ messagesNamespace.on('connection', (socket: Socket) => {
       }
 
       // Save message to database
-      const message = await prisma.$transaction(async (tx) => {
+      const message = await prisma.$transaction(async (tx: any) => {
         // Verify user has access to the project
         const project = await tx.project.findFirst({
           where: {
@@ -280,11 +264,11 @@ const startServer = async () => {
     await prisma.$executeRaw`PRAGMA journal_mode = WAL;`; // Enable WAL mode for better concurrency
     
     // Start server
-    server.listen(env.server.port, () => {
-      console.log(`🚀 Server running in ${env.server.isProduction ? 'production' : 'development'} mode`);
-      console.log(`🌐 API available at http://localhost:${env.server.port}`);
+    server.listen(serverConfig.port, () => {
+      console.log(`🚀 Server running in ${serverConfig.isProduction ? 'production' : 'development'} mode`);
+      console.log(`🌐 API available at http://localhost:${serverConfig.port}`);
       console.log(`📡 Socket.IO server ready at /realtime namespace`);
-      console.log(`💾 Database: ${env.database.url}`);
+      console.log(`💾 Database: ${env.DATABASE_URL}`);
     });
   } catch (error) {
     console.error('❌ Unable to start server:', error);
@@ -296,7 +280,7 @@ const startServer = async () => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   // Consider whether to exit the process in production
-  if (env.server.isProduction) {
+  if (serverConfig.isProduction) {
     process.exit(1);
   }
 });
@@ -305,7 +289,7 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
   // Consider whether to exit the process in production
-  if (env.server.isProduction) {
+  if (serverConfig.isProduction) {
     process.exit(1);
   }
 });

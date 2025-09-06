@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
-import type { User } from '../types';
 
 // Email validation function
 const validateEmail = (email: string): boolean => {

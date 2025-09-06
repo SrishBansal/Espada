@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Message } from '../types';
+import type { Message } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ChatBoxProps {
@@ -25,7 +25,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ projectId }) => {
   useEffect(() => {
     // Initialize Socket.IO connection
     const initSocket = async () => {
-      const { io } = await import('socket.io-client');
+      const io = (await import('socket.io-client')).default;
       socketRef.current = io('http://localhost:5000/messages');
 
       socketRef.current.on('connect', () => {
@@ -126,7 +126,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({ projectId }) => {
                 <p className={`text-xs mt-1 ${
                   message.senderId === user?.id ? 'text-primary-100' : 'text-gray-500'
                 }`}>
-                  {new Date(message.timestamp || message.createdAt).toLocaleTimeString()}
+                  {new Date(message.createdAt).toLocaleTimeString()}
                 </p>
               </div>
             </div>

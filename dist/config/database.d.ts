@@ -1,4 +1,3 @@
-import { Sequelize } from 'sequelize';
-declare const sequelize: Sequelize;
+declare const sequelize: any;
 export { sequelize };
 //# sourceMappingURL=database.d.ts.map

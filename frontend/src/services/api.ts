@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AuthResponse, LoginCredentials, SignupCredentials, Project, Task, Message } from '../types';
+import type { AuthResponse, LoginCredentials, SignupCredentials, Project, Task, Message } from '../types';
 
 const API_BASE_URL = 'http://localhost:5000';
 
@@ -16,7 +16,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers!.Authorization = `Bearer ${token}`;
     }
     return config;
   },
@@ -42,12 +42,12 @@ api.interceptors.response.use(
 export const authAPI = {
   signup: async (credentials: SignupCredentials): Promise<AuthResponse> => {
     const response = await api.post('/auth/signup', credentials);
-    return response.data;
+    return response.data as AuthResponse;
   },
 
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     const response = await api.post('/auth/login', credentials);
-    return response.data;
+    return response.data as AuthResponse;
   },
 };
 
@@ -55,22 +55,22 @@ export const authAPI = {
 export const projectsAPI = {
   getProjects: async (): Promise<Project[]> => {
     const response = await api.get('/projects');
-    return response.data;
+    return response.data as Project[];
   },
 
   getProject: async (id: number): Promise<Project> => {
     const response = await api.get(`/projects/${id}`);
-    return response.data;
+    return response.data as Project;
   },
 
   createProject: async (project: { name: string; description?: string; members?: string[] }): Promise<Project> => {
     const response = await api.post('/projects', project);
-    return response.data.project;
+    return (response.data as any).project;
   },
 
   updateProject: async (id: number, project: Partial<Project>): Promise<Project> => {
     const response = await api.put(`/projects/${id}`, project);
-    return response.data.project;
+    return (response.data as any).project;
   },
 
   deleteProject: async (id: number): Promise<void> => {
@@ -82,12 +82,12 @@ export const projectsAPI = {
 export const tasksAPI = {
   getProjectTasks: async (projectId: number): Promise<Task[]> => {
     const response = await api.get(`/tasks/projects/${projectId}/tasks`);
-    return response.data;
+    return response.data as Task[];
   },
 
   getTask: async (id: number): Promise<Task> => {
     const response = await api.get(`/tasks/${id}`);
-    return response.data;
+    return response.data as Task;
   },
 
   createTask: async (projectId: number, task: {
@@ -98,12 +98,12 @@ export const tasksAPI = {
     status?: string;
   }): Promise<Task> => {
     const response = await api.post(`/tasks/projects/${projectId}/tasks`, task);
-    return response.data.task;
+    return (response.data as any).task;
   },
 
   updateTask: async (id: number, task: Partial<Task>): Promise<Task> => {
     const response = await api.patch(`/tasks/${id}`, task);
-    return response.data.task;
+    return (response.data as any).task;
   },
 
   deleteTask: async (id: number): Promise<void> => {
@@ -115,7 +115,7 @@ export const tasksAPI = {
 export const messagesAPI = {
   getProjectMessages: async (projectId: number): Promise<Message[]> => {
     const response = await api.get(`/api/messages/project/${projectId}`);
-    return response.data;
+    return response.data as Message[];
   },
 
   createMessage: async (message: {
@@ -126,7 +126,7 @@ export const messagesAPI = {
     replyToId?: number;
   }): Promise<Message> => {
     const response = await api.post('/api/messages', message);
-    return response.data;
+    return response.data as Message;
   },
 };
 

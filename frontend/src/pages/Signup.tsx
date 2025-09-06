@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { SignupCredentials } from '../types';
+import type { SignupCredentials } from '../types';
 
 const Signup: React.FC = () => {
   const [credentials, setCredentials] = useState<SignupCredentials>({
