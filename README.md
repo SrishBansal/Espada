@@ -335,5 +335,3 @@ The project uses:
 - **Nodemon** for development auto-restart
 - **Sequelize** for database operations
 - **Socket.IO** for real-time features
-
-Happy coding! 🚀
