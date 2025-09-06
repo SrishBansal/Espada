@@ -88,7 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
     const { name, description, memberEmails } = createProjectSchema.parse(req.body);
 
     // Find members by email if provided
-    let members = [];
+    let members: any[] = [];
     if (memberEmails && memberEmails.length > 0) {
       members = await prisma.user.findMany({
         where: {

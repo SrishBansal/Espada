@@ -275,7 +275,7 @@ const startServer = async () => {
     
     // Apply database migrations
     console.log('🔍 Checking for database migrations...');
-    await prisma.$executeRaw`PRAGMA journal_mode = WAL;`; // Enable WAL mode for better concurrency
+    // Note: SQLite WAL mode is automatically enabled by Prisma
     
     // Start server
     server.listen(serverConfig.port, () => {
