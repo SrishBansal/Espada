@@ -55,7 +55,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
             </div>
           </div>
           <div className="text-sm text-gray-500">
-            {project.tasks?.length || 0} tasks
+            {project.tasks?.length || 0} tasks • 1 member
           </div>
         </div>
       </div>

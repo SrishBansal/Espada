@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Project, Task } from '../types';
 import { projectsAPI, tasksAPI } from '../services/api';
+import KanbanBoard from '../components/KanbanBoard';
+import ChatBox from '../components/ChatBox';
 
 const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -9,6 +11,7 @@ const ProjectDetail: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'chat'>('tasks');
 
   useEffect(() => {
     if (id) {
@@ -35,6 +38,10 @@ const ProjectDetail: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleTaskUpdate = () => {
+    fetchTasks(); // Refresh tasks when a task is created/updated
   };
 
   const getStatusColor = (status: string) => {
