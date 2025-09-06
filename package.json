@@ -19,6 +19,7 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:reset": "rm -f ./dev.db && npm run db:migrate && npm run db:seed",
     "test:smoke": "ts-node scripts/smoke-test.ts",
+    "verify": "node scripts/verify-connections.js",
     "lint": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
   },

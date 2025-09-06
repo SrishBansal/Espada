@@ -1,163 +1,373 @@
-import { Router, Request, Response } from 'express';
-import { Project, User, Task } from '../models';
-import { authenticateToken } from '../middleware/auth';
-import { validateProject } from '../middleware/validation';
+import express, { Request, Response } from 'express';
+import { z } from 'zod';
+import prisma from '../config/db';
+import { authenticate } from '../middleware/auth';
 
-interface AuthRequest extends Request {
-  user?: any;
-}
+const router = express.Router();
 
-const router = Router();
+// Apply authentication middleware to all routes
+router.use(authenticate);
 
-// GET /projects - List projects for logged-in user
-router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user.id;
-    
-    // Get projects where user is owner or member
-    const projects = await Project.findAll({
-      where: { ownerId: userId },
-      include: [
-        { model: User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] },
-        { model: Task, as: 'tasks', attributes: ['id', 'title', 'status', 'priority'] }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-    
-    res.json(projects);
-  } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ error: 'Failed to fetch projects' });
-  }
+// Validation schemas
+const createProjectSchema = z.object({
+  name: z.string().min(1, 'Project name is required'),
+  description: z.string().optional(),
+  memberEmails: z.array(z.string().email()).optional(),
 });
 
-// POST /projects - Create new project with name and members
-router.post('/', authenticateToken, validateProject, async (req: AuthRequest, res: Response) => {
-  try {
-    const { name, description, members } = req.body;
-    const userId = req.user.id;
-    
-    const project = await Project.create({
-      name,
-      description: description || '',
-      ownerId: userId,
-      status: 'planning'
-    });
-    
-    // Fetch the created project with associations
-    const createdProject = await Project.findByPk(project.id, {
-      include: [
-        { model: User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] }
-      ]
-    });
-    
-    res.status(201).json({
-      message: 'Project created successfully',
-      project: createdProject
-    });
-  } catch (error) {
-    console.error('Error creating project:', error);
-    res.status(500).json({ error: 'Failed to create project' });
-  }
+const updateProjectSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  memberEmails: z.array(z.string().email()).optional(),
 });
 
-// GET /projects/:id - Fetch single project details
-router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+// Get all projects for the authenticated user
+router.get('/', async (req: Request, res: Response) => {
   try {
-    const projectId = req.params.id;
-    const userId = req.user.id;
-    
-    const project = await Project.findByPk(projectId, {
-      include: [
-        { model: User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] },
-        { 
-          model: Task, 
-          as: 'tasks',
-          include: [
-            { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
-            { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
-          ]
-        }
-      ]
-    });
-    
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-    
-    // Check if user has access to this project
-    if (project.ownerId !== userId) {
-      return res.status(403).json({ error: 'Access denied to this project' });
-    }
-    
-    res.json(project);
-  } catch (error) {
-    console.error('Error fetching project:', error);
-    res.status(500).json({ error: 'Failed to fetch project' });
-  }
-});
+    const userId = (req as any).user.userId;
 
-// PUT /projects/:id - Update project
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
-  try {
-    const projectId = req.params.id;
-    const userId = req.user.id;
-    const { name, description, status } = req.body;
-    
-    const project = await Project.findByPk(projectId);
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
-    }
-    
-    // Check if user owns this project
-    if (project.ownerId !== userId) {
-      return res.status(403).json({ error: 'Access denied to this project' });
-    }
-    
-    await project.update({
-      name,
-      description,
-      status,
+    const projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { id: userId } } },
+        ],
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        tasks: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            dueDate: true,
+          },
+        },
+        _count: {
+          select: {
+            tasks: true,
+            messages: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
     });
-    
-    // Fetch the updated project with associations
-    const updatedProject = await Project.findByPk(project.id, {
-      include: [
-        { model: User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] }
-      ]
-    });
-    
+
     res.json({
-      message: 'Project updated successfully',
-      project: updatedProject
+      success: true,
+      data: projects,
     });
   } catch (error) {
-    console.error('Error updating project:', error);
-    res.status(500).json({ error: 'Failed to update project' });
+    console.error('Get projects error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// DELETE /projects/:id - Delete project
-router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+// Create a new project
+router.post('/', async (req: Request, res: Response) => {
   try {
-    const projectId = req.params.id;
-    const userId = req.user.id;
-    
-    const project = await Project.findByPk(projectId);
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found' });
+    const userId = (req as any).user.userId;
+    const { name, description, memberEmails } = createProjectSchema.parse(req.body);
+
+    // Find members by email if provided
+    let members = [];
+    if (memberEmails && memberEmails.length > 0) {
+      members = await prisma.user.findMany({
+        where: {
+          email: { in: memberEmails },
+        },
+        select: { id: true },
+      });
     }
-    
-    // Check if user owns this project
-    if (project.ownerId !== userId) {
-      return res.status(403).json({ error: 'Access denied to this project' });
-    }
-    
-    await project.destroy();
-    res.status(204).send();
+
+    const project = await prisma.project.create({
+      data: {
+        name,
+        description,
+        ownerId: userId,
+        members: {
+          connect: members.map(member => ({ id: member.id })),
+        },
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        _count: {
+          select: {
+            tasks: true,
+            messages: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Project created successfully',
+      data: project,
+    });
   } catch (error) {
-    console.error('Error deleting project:', error);
-    res.status(500).json({ error: 'Failed to delete project' });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
+    console.error('Create project error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+});
+
+// Get a specific project
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const projectId = req.params.id;
+
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        OR: [
+          { ownerId: userId },
+          { members: { some: { id: userId } } },
+        ],
+      },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        tasks: {
+          include: {
+            assignee: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            createdBy: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
+        messages: {
+          include: {
+            sender: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 50, // Limit to last 50 messages
+        },
+      },
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: project,
+    });
+  } catch (error) {
+    console.error('Get project error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+});
+
+// Update a project
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const projectId = req.params.id;
+    const updateData = updateProjectSchema.parse(req.body);
+
+    // Check if user owns the project
+    const existingProject = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ownerId: userId,
+      },
+    });
+
+    if (!existingProject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found or you do not have permission to update it',
+      });
+    }
+
+    // Handle member updates if provided
+    let updatePayload: any = {
+      name: updateData.name,
+      description: updateData.description,
+    };
+
+    if (updateData.memberEmails) {
+      // Find new members
+      const newMembers = await prisma.user.findMany({
+        where: {
+          email: { in: updateData.memberEmails },
+        },
+        select: { id: true },
+      });
+
+      updatePayload.members = {
+        set: newMembers.map(member => ({ id: member.id })),
+      };
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: projectId },
+      data: updatePayload,
+      include: {
+        owner: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        members: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        _count: {
+          select: {
+            tasks: true,
+            messages: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Project updated successfully',
+      data: updatedProject,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
+    console.error('Update project error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+});
+
+// Delete a project
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const projectId = req.params.id;
+
+    // Check if user owns the project
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        ownerId: userId,
+      },
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found or you do not have permission to delete it',
+      });
+    }
+
+    // Delete the project (cascade will handle related records)
+    await prisma.project.delete({
+      where: { id: projectId },
+    });
+
+    res.json({
+      success: true,
+      message: 'Project deleted successfully',
+    });
+  } catch (error) {
+    console.error('Delete project error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 

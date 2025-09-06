@@ -1,148 +1,293 @@
-import { Router, Request, Response } from 'express';
-import { Message, Project, User } from '../models';
+import express, { Request, Response } from 'express';
+import { z } from 'zod';
+import prisma from '../config/db';
+import { authenticate } from '../middleware/auth';
 
-const router = Router();
+const router = express.Router();
 
-// GET /api/messages/project/:projectId - Get messages by project
+// Apply authentication middleware to all routes
+router.use(authenticate);
+
+// Validation schemas
+const createMessageSchema = z.object({
+  content: z.string().min(1, 'Message content is required'),
+  projectId: z.string().min(1, 'Project ID is required'),
+});
+
+// Get all messages for a project
 router.get('/project/:projectId', async (req: Request, res: Response) => {
   try {
-    const messages = await Message.findAll({
-      where: { projectId: req.params.projectId },
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName', 'avatar'] },
-        { 
-          model: Message, 
-          as: 'replyTo',
-          include: [
-            { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName'] }
-          ]
-        }
-      ],
-      order: [['createdAt', 'ASC']]
+    const userId = (req as any).user.userId;
+    const projectId = req.params.projectId;
+
+    // Verify user has access to the project
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        OR: [
+          { ownerId: userId },
+          { members: { some: { id: userId } } },
+        ],
+      },
     });
-    res.json(messages);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found or access denied',
+      });
+    }
+
+    const messages = await prisma.message.findMany({
+      where: { projectId },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    res.json({
+      success: true,
+      data: messages,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch messages' });
+    console.error('Get project messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// GET /api/messages/:id - Get message by ID
+// Get a specific message
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const message = await Message.findByPk(req.params.id, {
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName', 'avatar'] },
-        { 
-          model: Message, 
-          as: 'replyTo',
-          include: [
-            { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName'] }
-          ]
+    const userId = (req as any).user.userId;
+    const messageId = req.params.id;
+
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        project: {
+          OR: [
+            { ownerId: userId },
+            { members: { some: { id: userId } } },
+          ],
         },
-        { 
-          model: Message, 
-          as: 'replies',
-          include: [
-            { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName', 'avatar'] }
-          ]
-        }
-      ]
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
-    
+
     if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found or access denied',
+      });
     }
-    
-    res.json(message);
+
+    res.json({
+      success: true,
+      data: message,
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch message' });
+    console.error('Get message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// POST /api/messages - Create new message
+// Create a new message
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { content, messageType, projectId, senderId, replyToId } = req.body;
-    
-    const message = await Message.create({
-      content,
-      messageType: messageType || 'text',
-      projectId,
-      senderId,
-      replyToId,
+    const userId = (req as any).user.userId;
+    const { content, projectId } = createMessageSchema.parse(req.body);
+
+    // Verify user has access to the project
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        OR: [
+          { ownerId: userId },
+          { members: { some: { id: userId } } },
+        ],
+      },
     });
-    
-    // Fetch the created message with associations
-    const createdMessage = await Message.findByPk(message.id, {
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName', 'avatar'] },
-        { 
-          model: Message, 
-          as: 'replyTo',
-          include: [
-            { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName'] }
-          ]
-        }
-      ]
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found or access denied',
+      });
+    }
+
+    const message = await prisma.message.create({
+      data: {
+        content: content.trim(),
+        projectId,
+        senderId: userId,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
-    
-    res.status(201).json(createdMessage);
+
+    res.status(201).json({
+      success: true,
+      message: 'Message created successfully',
+      data: message,
+    });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to create message' });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
+    console.error('Create message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// PUT /api/messages/:id - Update message (edit)
+// Update a message (only by sender)
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { content } = req.body;
-    
-    const message = await Message.findByPk(req.params.id);
+    const userId = (req as any).user.userId;
+    const messageId = req.params.id;
+    const { content } = z.object({
+      content: z.string().min(1, 'Message content is required'),
+    }).parse(req.body);
+
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        senderId: userId,
+      },
+    });
+
     if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found or you do not have permission to update it',
+      });
     }
-    
-    await message.update({
-      content,
-      isEdited: true,
+
+    const updatedMessage = await prisma.message.update({
+      where: { id: messageId },
+      data: { content: content.trim() },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        project: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
-    
-    // Fetch the updated message with associations
-    const updatedMessage = await Message.findByPk(message.id, {
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName', 'avatar'] },
-        { 
-          model: Message, 
-          as: 'replyTo',
-          include: [
-            { model: User, as: 'sender', attributes: ['id', 'username', 'firstName', 'lastName'] }
-          ]
-        }
-      ]
+
+    res.json({
+      success: true,
+      message: 'Message updated successfully',
+      data: updatedMessage,
     });
-    
-    res.json(updatedMessage);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update message' });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.errors,
+      });
+    }
+
+    console.error('Update message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
-// DELETE /api/messages/:id - Delete message
+// Delete a message (only by sender)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const message = await Message.findByPk(req.params.id);
+    const userId = (req as any).user.userId;
+    const messageId = req.params.id;
+
+    const message = await prisma.message.findFirst({
+      where: {
+        id: messageId,
+        senderId: userId,
+      },
+    });
+
     if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found or you do not have permission to delete it',
+      });
     }
-    
-    await message.destroy();
-    res.status(204).send();
+
+    await prisma.message.delete({
+      where: { id: messageId },
+    });
+
+    res.json({
+      success: true,
+      message: 'Message deleted successfully',
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete message' });
+    console.error('Delete message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
   }
 });
 
