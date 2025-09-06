@@ -1,6 +1,15 @@
-# SynergySphere Backend
+# Espada - Project Management Platform
 
-A Node.js + Express backend for the SynergySphere hackathon project with real-time messaging capabilities.
+A full-stack project management application built for the hackathon, featuring real-time collaboration, task management, and team communication.
+
+## 🚀 Features
+
+- **Project Management**: Create and manage projects with your team
+- **Task Tracking**: Kanban-style task board with drag-and-drop functionality
+- **Real-time Chat**: Built-in chat for each project
+- **User Authentication**: Secure JWT-based authentication
+- **Responsive Design**: Works on desktop and mobile devices
+- **Form Validation**: Client and server-side validation for all forms
 
 ## Features
 
@@ -10,42 +19,131 @@ A Node.js + Express backend for the SynergySphere hackathon project with real-ti
 - RESTful API endpoints for Users, Projects, Tasks, and Messages
 - Real-time messaging on `/messages` namespace
 
-## Tech Stack
+## 🛠️ Tech Stack
 
+### Frontend
+- React with TypeScript
+- Vite for fast development
+- Tailwind CSS for styling
+- Socket.IO Client for real-time updates
+- React Query for data fetching and caching
+
+### Backend
 - Node.js + Express
 - TypeScript
 - SQLite + Sequelize ORM
-- Socket.IO
+- JWT Authentication
+- Socket.IO for real-time communication
 - CORS enabled
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js (v14 or higher)
-- npm
+- Node.js (v16 or higher)
+- npm (v8 or higher) or yarn
 
 ### Installation
 
-1. Install dependencies:
+1. **Clone the repository**
 ```bash
-npm install
+git clone https://github.com/yourusername/espada.git
+cd espada
 ```
 
-2. Start the development server:
+2. **Set up the backend**
 ```bash
+# Install dependencies
+npm install
+
+# Create a .env file from the example
+cp .env.example .env
+
+# Update the .env file with your configuration
+
+# Start the development server
 npm run dev
 ```
 
-3. Build for production:
+3. **Set up the frontend**
 ```bash
-npm run build
-npm start
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start the development server
+npm run dev
 ```
 
-The server will run on `http://localhost:5000`
+The backend will run on `http://localhost:5000` and the frontend on `http://localhost:3000`
 
-## API Endpoints
+## 🔧 Environment Variables
+
+Create a `.env` file in the root directory with the following variables (see `.env.example`):
+
+```env
+# Server Configuration
+PORT=5000
+NODE_ENV=development
+
+# Database Configuration
+DB_PATH=./database.sqlite
+
+# JWT Configuration
+JWT_SECRET=your_jwt_secret_key_here
+JWT_EXPIRES_IN=24h
+
+# CORS Configuration
+CORS_ORIGIN=http://localhost:3000
+```
+
+## 📚 Project Structure
+
+```
+├── .github/              # GitHub workflows and templates
+├── frontend/             # Frontend React application
+│   ├── public/           # Static files
+│   ├── src/
+│   │   ├── components/   # Reusable UI components
+│   │   ├── pages/        # Page components
+│   │   ├── services/     # API service layer
+│   │   └── App.tsx       # Main application component
+│   └── ...
+├── src/                  # Backend source code
+│   ├── config/           # Configuration files
+│   ├── controllers/      # Request handlers
+│   ├── middleware/       # Express middleware
+│   ├── models/           # Database models
+│   ├── routes/           # API routes
+│   └── server.ts         # Server entry point
+├── .env.example          # Example environment variables
+├── .gitignore            # Git ignore file
+├── package.json          # Backend dependencies
+└── README.md             # This file
+
+## 📝 API Documentation
+
+### Authentication
+- `POST /auth/signup` - Register a new user
+- `POST /auth/login` - Login user and get JWT token
+
+### Projects
+- `GET /projects` - Get all projects for the current user
+- `POST /projects` - Create a new project
+- `GET /projects/:id` - Get project details
+- `PUT /projects/:id` - Update project
+- `DELETE /projects/:id` - Delete project
+
+### Tasks
+- `GET /tasks/projects/:projectId/tasks` - Get all tasks for a project
+- `POST /tasks/projects/:projectId/tasks` - Create a new task
+- `PATCH /tasks/:id` - Update a task
+- `DELETE /tasks/:id` - Delete a task
+
+### Messages
+- `GET /api/messages/project/:projectId` - Get messages for a project
+- `POST /api/messages` - Send a new message
 
 ### Health Check
 - `GET /health` - Server health status
@@ -75,56 +173,83 @@ The server will run on `http://localhost:5000`
 - `PUT /api/messages/:id` - Update message
 - `DELETE /api/messages/:id` - Delete message
 
-## Socket.IO Real-time Messaging
+## 💬 Real-time Features
 
-Connect to the `/messages` namespace for real-time project chat:
-
-### Events
+### Socket.IO Events
 
 **Client to Server:**
-- `joinProject` - Join a project room (projectId, userId)
-- `leaveProject` - Leave a project room (projectId, userId)
-- `sendMessage` - Send a message to project room (projectId, senderId, text)
+- `joinProject` - Join a project room
+- `leaveProject` - Leave a project room
+- `sendMessage` - Send a message to project room
+- `updateTaskStatus` - Update task status in real-time
 
 **Server to Client:**
-- `newMessage` - Receive new message in project room
-- `userJoined` - User joined the project room
-- `userLeft` - User left the project room
-- `error` - Error message
+- `newMessage` - New message in project
+- `taskUpdated` - Task was updated
+- `userJoined` - User joined the project
+- `userLeft` - User left the project
+- `notification` - General notifications
 
-### Example Usage
+## 🧪 Testing
 
-```javascript
-const socket = io('/messages');
+To run tests:
 
-// Join a project room
-socket.emit('joinProject', {
-  projectId: '123',
-  userId: '456'
-});
+```bash
+# Run backend tests
+npm test
 
-// Send a message
-socket.emit('sendMessage', {
-  projectId: '123',
-  senderId: '456',
-  text: 'Hello team!'
-});
-
-// Listen for new messages
-socket.on('newMessage', (data) => {
-  console.log('New message:', data);
-  // data contains: { id, content, sender, projectId, timestamp }
-});
-
-// Listen for user events
-socket.on('userJoined', (data) => {
-  console.log('User joined:', data.userId);
-});
-
-socket.on('userLeft', (data) => {
-  console.log('User left:', data.userId);
-});
+# Run frontend tests
+cd frontend
+npm test
 ```
+
+## 🚀 Deployment
+
+### Production Build
+
+1. Build the frontend:
+```bash
+cd frontend
+npm run build
+```
+
+2. Start the production server:
+```bash
+npm start
+```
+
+### Environment Variables for Production
+
+Make sure to set the following environment variables in production:
+- `NODE_ENV=production`
+- `JWT_SECRET` - A secure secret key for JWT
+- `DB_PATH` - Path to your production database
+- `CORS_ORIGIN` - Your production frontend URL
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 👥 Team
+
+- [Team Member 1](https://github.com/username1)
+- [Team Member 2](https://github.com/username2)
+- [Team Member 3](https://github.com/username3)
+
+## 🙏 Acknowledgments
+
+- [React](https://reactjs.org/)
+- [Express](https://expressjs.com/)
+- [Socket.IO](https://socket.io/)
+- [Tailwind CSS](https://tailwindcss.com/)
 
 ## Database Models
 

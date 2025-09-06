@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { tasksAPI } from '../services/api';
-import { User } from '../types';
+import type { User } from '../types';
+
+// Email validation function
+const validateEmail = (email: string): boolean => {
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(email);
+};
+
+// Format date to YYYY-MM-DD for date input
+const formatDate = (date: Date): string => {
+  return date.toISOString().split('T')[0];
+};
 
 interface NewTaskModalProps {
   isOpen: boolean;
@@ -17,22 +28,67 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
     dueDate: '',
     status: 'todo' as 'todo' | 'in-progress' | 'completed' | 'blocked',
   });
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [users, setUsers] = useState<User[]>([]);
+  // Commented out unused users state since it's not currently used
+  // const [users, setUsers] = useState<User[]>([]);
+  
+  // Track touched fields for validation
+  const [touched, setTouched] = useState({
+    title: false,
+    assignee: false,
+    dueDate: false
+  });
+  
+  // Track validation errors
+  const [errors, setErrors] = useState({
+    title: '',
+    assignee: '',
+    dueDate: ''
+  });
 
+  // Commented out unused effect since users state is not used
+  // useEffect(() => {
+  //   if (isOpen) {
+  //     // In a real app, you'd fetch users from an API
+  //     // For now, we'll use a mock list or get from context
+  //     setUsers([]);
+  //   }
+  // }, [isOpen]);
+
+  // Validate form fields
+  const validateForm = () => {
+    const newErrors = {
+      title: !formData.title.trim() ? 'Task title is required' : '',
+      assignee: formData.assignee && !validateEmail(formData.assignee) ? 'Please enter a valid email address' : '',
+      dueDate: formData.dueDate && new Date(formData.dueDate) < new Date() ? 'Due date cannot be in the past' : ''
+    };
+    
+    setErrors(newErrors);
+    return !Object.values(newErrors).some(error => error !== '');
+  };
+
+  // Validate on form data change
   useEffect(() => {
-    if (isOpen) {
-      // In a real app, you'd fetch users from an API
-      // For now, we'll use a mock list or get from context
-      setUsers([]);
+    if (Object.values(touched).some(field => field)) {
+      validateForm();
     }
-  }, [isOpen]);
+  }, [formData, touched]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title.trim()) {
-      setError('Task title is required');
+    
+    // Mark all fields as touched
+    setTouched({
+      title: true,
+      assignee: true,
+      dueDate: true
+    });
+    
+    // Validate form
+    if (!validateForm() || !formData.title.trim()) {
+      setError('Please fill in all required fields correctly');
       return;
     }
 
@@ -66,13 +122,36 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
+    
+    // Clear error when user starts typing
+    if (errors[name as keyof typeof errors]) {
+      setErrors({
+        ...errors,
+        [name]: ''
+      });
+    }
+    
+    if (error) setError('');
   };
+  
+  const handleBlur = (field: 'title' | 'assignee' | 'dueDate') => {
+    setTouched({ ...touched, [field]: true });
+  };
+  
+  // Get minimum date (today) for due date input
+  const today = formatDate(new Date());
 
   if (!isOpen) return null;
+  
+  // Check if fields are valid
+  const isTitleValid = formData.title.trim() !== '' || !touched.title;
+  const isAssigneeValid = !errors.assignee || !touched.assignee;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -82,9 +161,9 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-4">
-          {error && (
+          {(error || !isTitleValid) && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md">
-              {error}
+              {error || 'Please fix the errors in the form before submitting.'}
             </div>
           )}
 
@@ -99,8 +178,11 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
                 name="title"
                 value={formData.title}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border ${
+                  !isTitleValid ? 'border-red-500' : 'border-gray-300'
+                } rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
                 placeholder="Enter task title"
+                onBlur={() => handleBlur('title')}
                 required
               />
             </div>
@@ -122,31 +204,48 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
 
             <div>
               <label htmlFor="assignee" className="block text-sm font-medium text-gray-700 mb-1">
-                Assignee
+                Assignee Email
               </label>
-              <input
-                type="text"
-                id="assignee"
-                name="assignee"
-                value={formData.assignee}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Enter username or email"
-              />
+              <div>
+                <input
+                  type="email"
+                  id="assignee"
+                  name="assignee"
+                  value={formData.assignee}
+                  onChange={handleChange}
+                  onBlur={() => handleBlur('assignee')}
+                  className={`w-full px-3 py-2 border ${
+                    !isAssigneeValid ? 'border-red-500' : 'border-gray-300'
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
+                  placeholder="Enter assignee's email (optional)"
+                />
+                {!isAssigneeValid && (
+                  <p className="mt-1 text-sm text-red-600">{errors.assignee}</p>
+                )}
+              </div>
             </div>
 
             <div>
               <label htmlFor="dueDate" className="block text-sm font-medium text-gray-700 mb-1">
                 Due Date
               </label>
-              <input
-                type="date"
-                id="dueDate"
-                name="dueDate"
-                value={formData.dueDate}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              />
+              <div>
+                <input
+                  type="date"
+                  id="dueDate"
+                  name="dueDate"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  onBlur={() => handleBlur('dueDate')}
+                  min={today}
+                  className={`w-full px-3 py-2 border ${
+                    errors.dueDate ? 'border-red-500' : 'border-gray-300'
+                  } rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
+                />
+                {errors.dueDate && (
+                  <p className="mt-1 text-sm text-red-600">{errors.dueDate}</p>
+                )}
+              </div>
             </div>
 
             <div>
@@ -178,8 +277,10 @@ const NewTaskModal: React.FC<NewTaskModalProps> = ({ isOpen, onClose, projectId,
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading || !formData.title.trim()}
+              className={`px-4 py-2 ${
+                !formData.title.trim() ? 'bg-gray-400' : 'bg-primary-600 hover:bg-primary-700'
+              } text-white rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {isLoading ? 'Creating...' : 'Create Task'}
             </button>

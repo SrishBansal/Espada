@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { projectsAPI } from '../services/api';
+
+// Email validation function
+const validateEmail = (email: string): boolean => {
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(email);
+};
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -16,11 +22,38 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [touched, setTouched] = useState({
+    name: false,
+    members: false
+  });
+  const [emailError, setEmailError] = useState('');
+
+  // Validate form
+  const validateForm = () => {
+    const errors = {
+      name: !formData.name.trim() ? 'Project name is required' : '',
+      email: newMemberEmail && !validateEmail(newMemberEmail) ? 'Please enter a valid email address' : ''
+    };
+    setEmailError(errors.email);
+    return !errors.name && !errors.email;
+  };
+
+  // Validate on form data change
+  useEffect(() => {
+    if (touched.name) {
+      validateForm();
+    }
+  }, [formData.name, newMemberEmail, touched]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      setError('Project name is required');
+    
+    // Mark all fields as touched
+    setTouched({ name: true, members: true });
+    
+    // Validate form
+    if (!validateForm() || !formData.name.trim()) {
+      setError('Please fill in all required fields correctly');
       return;
     }
 
@@ -47,13 +80,29 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
   };
 
   const addMember = () => {
-    if (newMemberEmail.trim() && !formData.members.includes(newMemberEmail.trim())) {
-      setFormData({
-        ...formData,
-        members: [...formData.members, newMemberEmail.trim()],
-      });
-      setNewMemberEmail('');
+    const email = newMemberEmail.trim();
+    
+    if (!email) {
+      setEmailError('Email is required');
+      return;
     }
+    
+    if (!validateEmail(email)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+    
+    if (formData.members.includes(email)) {
+      setEmailError('This email has already been added');
+      return;
+    }
+    
+    setFormData({
+      ...formData,
+      members: [...formData.members, email],
+    });
+    setNewMemberEmail('');
+    setEmailError('');
   };
 
   const removeMember = (email: string) => {
@@ -70,7 +119,14 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
     }
   };
 
+  const handleBlur = (field: 'name' | 'members') => {
+    setTouched({ ...touched, [field]: true });
+  };
+
   if (!isOpen) return null;
+  
+  // Check if name is valid
+  const isNameValid = formData.name.trim() !== '' || !touched.name;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -95,11 +151,20 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
                 type="text"
                 id="name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  if (error) setError('');
+                }}
+                onBlur={() => handleBlur('name')}
+                className={`w-full px-3 py-2 border ${
+                  !isNameValid ? 'border-red-500' : 'border-gray-300'
+                } rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
                 placeholder="Enter project name"
                 required
               />
+              {!isNameValid && (
+                <p className="mt-1 text-sm text-red-600">Project name is required</p>
+              )}
             </div>
 
             <div>
@@ -121,14 +186,25 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
                 Add Team Members
               </label>
               <div className="flex space-x-2">
-                <input
-                  type="email"
-                  value={newMemberEmail}
-                  onChange={(e) => setNewMemberEmail(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Enter email address"
-                />
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    value={newMemberEmail}
+                    onChange={(e) => {
+                      setNewMemberEmail(e.target.value);
+                      if (emailError) setEmailError('');
+                    }}
+                    onKeyPress={handleKeyPress}
+                    onBlur={() => handleBlur('members')}
+                    className={`w-full px-3 py-2 border ${
+                      emailError ? 'border-red-500' : 'border-gray-300'
+                    } rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
+                    placeholder="Enter email address"
+                  />
+                  {emailError && (
+                    <p className="mt-1 text-sm text-red-600">{emailError}</p>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={addMember}
@@ -167,8 +243,10 @@ const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onPr
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isLoading || !formData.name.trim()}
+              className={`px-4 py-2 ${
+                !formData.name.trim() ? 'bg-gray-400' : 'bg-primary-600 hover:bg-primary-700'
+              } text-white rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {isLoading ? 'Creating...' : 'Create Project'}
             </button>
