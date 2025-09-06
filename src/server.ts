@@ -43,12 +43,26 @@ io.use((socket, next) => {
 });
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+app.get('/health', async (req, res) => {
+  try {
+    // Test database connection
+    await prisma.$queryRaw`SELECT 1`;
+    
+    res.json({ 
+      status: 'ok', 
+      db: 'connected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error', 
+      db: 'disconnected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // Middleware

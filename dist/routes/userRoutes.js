@@ -1,92 +1,213 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const User_1 = require("../models/User");
-const router = (0, express_1.Router)();
-// GET /api/users - Get all users
+const express_1 = __importDefault(require("express"));
+const zod_1 = require("zod");
+const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const router = express_1.default.Router();
+// Apply authentication middleware to all routes
+router.use(auth_1.authenticate);
+// Validation schemas
+const updateUserSchema = zod_1.z.object({
+    name: zod_1.z.string().min(2, 'Name must be at least 2 characters').optional(),
+    email: zod_1.z.string().email('Invalid email address').optional(),
+});
+// Get all users (for project member selection)
 router.get('/', async (req, res) => {
     try {
-        const users = await User_1.User.findAll({
-            attributes: { exclude: ['password'] },
+        const users = await db_1.default.user.findMany({
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                createdAt: true,
+            },
+            orderBy: {
+                name: 'asc',
+            },
         });
-        res.json(users);
+        res.json({
+            success: true,
+            data: users,
+        });
     }
     catch (error) {
-        res.status(500).json({ error: 'Failed to fetch users' });
+        console.error('Get users error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
     }
 });
-// GET /api/users/:id - Get user by ID
+// Get current user profile
+router.get('/me', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const user = await db_1.default.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                createdAt: true,
+                updatedAt: true,
+                projects: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        createdAt: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        projects: true,
+                        tasks: true,
+                        messages: true,
+                    },
+                },
+            },
+        });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+            });
+        }
+        res.json({
+            success: true,
+            data: user,
+        });
+    }
+    catch (error) {
+        console.error('Get user profile error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
+});
+// Get a specific user
 router.get('/:id', async (req, res) => {
     try {
-        const user = await User_1.User.findByPk(req.params.id, {
-            attributes: { exclude: ['password'] },
+        const userId = req.params.id;
+        const user = await db_1.default.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                createdAt: true,
+                projects: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        createdAt: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        projects: true,
+                        tasks: true,
+                        messages: true,
+                    },
+                },
+            },
         });
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            return res.status(404).json({
+                success: false,
+                message: 'User not found',
+            });
         }
-        res.json(user);
-    }
-    catch (error) {
-        res.status(500).json({ error: 'Failed to fetch user' });
-    }
-});
-// POST /api/users - Create new user
-router.post('/', async (req, res) => {
-    try {
-        const { username, email, password, firstName, lastName, avatar } = req.body;
-        const user = await User_1.User.create({
-            username,
-            email,
-            password, // In production, hash this password
-            firstName,
-            lastName,
-            avatar,
+        res.json({
+            success: true,
+            data: user,
         });
-        // Return user without password
-        const userResponse = user.toJSON();
-        delete userResponse.password;
-        res.status(201).json(userResponse);
     }
     catch (error) {
-        res.status(400).json({ error: 'Failed to create user' });
-    }
-});
-// PUT /api/users/:id - Update user
-router.put('/:id', async (req, res) => {
-    try {
-        const { username, email, firstName, lastName, avatar } = req.body;
-        const user = await User_1.User.findByPk(req.params.id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-        await user.update({
-            username,
-            email,
-            firstName,
-            lastName,
-            avatar,
+        console.error('Get user error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
         });
-        // Return user without password
-        const userResponse = user.toJSON();
-        delete userResponse.password;
-        res.json(userResponse);
-    }
-    catch (error) {
-        res.status(400).json({ error: 'Failed to update user' });
     }
 });
-// DELETE /api/users/:id - Delete user
-router.delete('/:id', async (req, res) => {
+// Update current user profile
+router.put('/me', async (req, res) => {
     try {
-        const user = await User_1.User.findByPk(req.params.id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+        const userId = req.user.userId;
+        const updateData = updateUserSchema.parse(req.body);
+        // Check if email is already taken by another user
+        if (updateData.email) {
+            const existingUser = await db_1.default.user.findFirst({
+                where: {
+                    email: updateData.email,
+                    id: { not: userId },
+                },
+            });
+            if (existingUser) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email is already taken by another user',
+                });
+            }
         }
-        await user.destroy();
-        res.status(204).send();
+        const updatedUser = await db_1.default.user.update({
+            where: { id: userId },
+            data: updateData,
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+        res.json({
+            success: true,
+            message: 'Profile updated successfully',
+            data: updatedUser,
+        });
     }
     catch (error) {
-        res.status(500).json({ error: 'Failed to delete user' });
+        if (error instanceof zod_1.z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.errors,
+            });
+        }
+        console.error('Update user profile error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
+});
+// Delete current user account
+router.delete('/me', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        // Delete the user (cascade will handle related records)
+        await db_1.default.user.delete({
+            where: { id: userId },
+        });
+        res.json({
+            success: true,
+            message: 'Account deleted successfully',
+        });
+    }
+    catch (error) {
+        console.error('Delete user account error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
     }
 });
 exports.default = router;

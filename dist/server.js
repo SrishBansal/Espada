@@ -8,7 +8,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const http_1 = require("http");
 const socket_io_1 = require("socket.io");
-const http_errors_1 = require("http-errors");
+const http_errors_1 = __importDefault(require("http-errors"));
 const logger_1 = require("./middleware/logger");
 const errorHandler_1 = require("./middleware/errorHandler");
 const auth_1 = require("./middleware/auth");
@@ -41,12 +41,26 @@ io.use((socket, next) => {
     next();
 });
 // Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-    });
+app.get('/health', async (req, res) => {
+    try {
+        // Test database connection
+        await db_1.default.$queryRaw `SELECT 1`;
+        res.json({
+            status: 'ok',
+            db: 'connected',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+        });
+    }
+    catch (error) {
+        res.status(500).json({
+            status: 'error',
+            db: 'disconnected',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
 });
 // Middleware
 app.use((0, cors_1.default)(env_1.corsConfig));
@@ -60,7 +74,7 @@ app.use('/tasks', auth_1.authenticate, taskRoutes_1.default);
 app.use('/api/messages', auth_1.authenticate, messageRoutes_1.default);
 // 404 handler
 app.use((req, res, next) => {
-    next((0, http_errors_1.createError)(404, 'Not Found'));
+    next((0, http_errors_1.default)(404, 'Not Found'));
 });
 // Error handling middleware
 app.use(errorHandler_1.errorHandler);
@@ -228,11 +242,11 @@ const startServer = async () => {
         console.log('🔍 Checking for database migrations...');
         await db_1.default.$executeRaw `PRAGMA journal_mode = WAL;`; // Enable WAL mode for better concurrency
         // Start server
-        server.listen(env_1.env.server.port, () => {
-            console.log(`🚀 Server running in ${env_1.env.server.isProduction ? 'production' : 'development'} mode`);
-            console.log(`🌐 API available at http://localhost:${env_1.env.server.port}`);
+        server.listen(env_1.serverConfig.port, () => {
+            console.log(`🚀 Server running in ${env_1.serverConfig.isProduction ? 'production' : 'development'} mode`);
+            console.log(`🌐 API available at http://localhost:${env_1.serverConfig.port}`);
             console.log(`📡 Socket.IO server ready at /realtime namespace`);
-            console.log(`💾 Database: ${env_1.env.database.url}`);
+            console.log(`💾 Database: ${env_1.env.DATABASE_URL}`);
         });
     }
     catch (error) {
@@ -244,7 +258,7 @@ const startServer = async () => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
     // Consider whether to exit the process in production
-    if (env_1.env.server.isProduction) {
+    if (env_1.serverConfig.isProduction) {
         process.exit(1);
     }
 });
@@ -252,7 +266,7 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     // Consider whether to exit the process in production
-    if (env_1.env.server.isProduction) {
+    if (env_1.serverConfig.isProduction) {
         process.exit(1);
     }
 });

@@ -18,8 +18,10 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   projects  Project[] @relation("ProjectMembers")
+  ownedProjects Project[] @relation("ProjectOwner")
   messages  Message[]
   tasks     Task[]
+  createdTasks Task[] @relation("TaskCreatedBy")
 }
 
 model Project {
@@ -29,7 +31,7 @@ model Project {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   ownerId     String
-  owner       User      @relation(fields: [ownerId], references: [id])
+  owner       User      @relation("ProjectOwner", fields: [ownerId], references: [id])
   members     User[]    @relation("ProjectMembers")
   tasks       Task[]
   messages    Message[]

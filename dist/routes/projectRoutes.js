@@ -1,143 +1,353 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = require("express");
-const models_1 = require("../models");
+const express_1 = __importDefault(require("express"));
+const zod_1 = require("zod");
+const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
-const validation_1 = require("../middleware/validation");
-const router = (0, express_1.Router)();
-// GET /projects - List projects for logged-in user
-router.get('/', auth_1.authenticateToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        // Get projects where user is owner or member
-        const projects = await models_1.Project.findAll({
-            where: { ownerId: userId },
-            include: [
-                { model: models_1.User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] },
-                { model: models_1.Task, as: 'tasks', attributes: ['id', 'title', 'status', 'priority'] }
-            ],
-            order: [['createdAt', 'DESC']]
-        });
-        res.json(projects);
-    }
-    catch (error) {
-        console.error('Error fetching projects:', error);
-        res.status(500).json({ error: 'Failed to fetch projects' });
-    }
+const router = express_1.default.Router();
+// Apply authentication middleware to all routes
+router.use(auth_1.authenticate);
+// Validation schemas
+const createProjectSchema = zod_1.z.object({
+    name: zod_1.z.string().min(1, 'Project name is required'),
+    description: zod_1.z.string().optional(),
+    memberEmails: zod_1.z.array(zod_1.z.string().email()).optional(),
 });
-// POST /projects - Create new project with name and members
-router.post('/', auth_1.authenticateToken, validation_1.validateProject, async (req, res) => {
-    try {
-        const { name, description, members } = req.body;
-        const userId = req.user.id;
-        const project = await models_1.Project.create({
-            name,
-            description: description || '',
-            ownerId: userId,
-            status: 'planning'
-        });
-        // Fetch the created project with associations
-        const createdProject = await models_1.Project.findByPk(project.id, {
-            include: [
-                { model: models_1.User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] }
-            ]
-        });
-        res.status(201).json({
-            message: 'Project created successfully',
-            project: createdProject
-        });
-    }
-    catch (error) {
-        console.error('Error creating project:', error);
-        res.status(500).json({ error: 'Failed to create project' });
-    }
+const updateProjectSchema = zod_1.z.object({
+    name: zod_1.z.string().min(1).optional(),
+    description: zod_1.z.string().optional(),
+    memberEmails: zod_1.z.array(zod_1.z.string().email()).optional(),
 });
-// GET /projects/:id - Fetch single project details
-router.get('/:id', auth_1.authenticateToken, async (req, res) => {
+// Get all projects for the authenticated user
+router.get('/', async (req, res) => {
     try {
-        const projectId = req.params.id;
-        const userId = req.user.id;
-        const project = await models_1.Project.findByPk(projectId, {
-            include: [
-                { model: models_1.User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] },
-                {
-                    model: models_1.Task,
-                    as: 'tasks',
-                    include: [
-                        { model: models_1.User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
-                        { model: models_1.User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
-                    ]
-                }
-            ]
-        });
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-        // Check if user has access to this project
-        if (project.ownerId !== userId) {
-            return res.status(403).json({ error: 'Access denied to this project' });
-        }
-        res.json(project);
-    }
-    catch (error) {
-        console.error('Error fetching project:', error);
-        res.status(500).json({ error: 'Failed to fetch project' });
-    }
-});
-// PUT /projects/:id - Update project
-router.put('/:id', auth_1.authenticateToken, async (req, res) => {
-    try {
-        const projectId = req.params.id;
-        const userId = req.user.id;
-        const { name, description, status } = req.body;
-        const project = await models_1.Project.findByPk(projectId);
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
-        }
-        // Check if user owns this project
-        if (project.ownerId !== userId) {
-            return res.status(403).json({ error: 'Access denied to this project' });
-        }
-        await project.update({
-            name,
-            description,
-            status,
-        });
-        // Fetch the updated project with associations
-        const updatedProject = await models_1.Project.findByPk(project.id, {
-            include: [
-                { model: models_1.User, as: 'owner', attributes: ['id', 'username', 'firstName', 'lastName'] }
-            ]
+        const userId = req.user.userId;
+        const projects = await db_1.default.project.findMany({
+            where: {
+                OR: [
+                    { ownerId: userId },
+                    { members: { some: { id: userId } } },
+                ],
+            },
+            include: {
+                owner: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                members: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                tasks: {
+                    select: {
+                        id: true,
+                        title: true,
+                        status: true,
+                        dueDate: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        tasks: true,
+                        messages: true,
+                    },
+                },
+            },
+            orderBy: {
+                updatedAt: 'desc',
+            },
         });
         res.json({
-            message: 'Project updated successfully',
-            project: updatedProject
+            success: true,
+            data: projects,
         });
     }
     catch (error) {
-        console.error('Error updating project:', error);
-        res.status(500).json({ error: 'Failed to update project' });
+        console.error('Get projects error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
     }
 });
-// DELETE /projects/:id - Delete project
-router.delete('/:id', auth_1.authenticateToken, async (req, res) => {
+// Create a new project
+router.post('/', async (req, res) => {
     try {
-        const projectId = req.params.id;
-        const userId = req.user.id;
-        const project = await models_1.Project.findByPk(projectId);
-        if (!project) {
-            return res.status(404).json({ error: 'Project not found' });
+        const userId = req.user.userId;
+        const { name, description, memberEmails } = createProjectSchema.parse(req.body);
+        // Find members by email if provided
+        let members = [];
+        if (memberEmails && memberEmails.length > 0) {
+            members = await db_1.default.user.findMany({
+                where: {
+                    email: { in: memberEmails },
+                },
+                select: { id: true },
+            });
         }
-        // Check if user owns this project
-        if (project.ownerId !== userId) {
-            return res.status(403).json({ error: 'Access denied to this project' });
-        }
-        await project.destroy();
-        res.status(204).send();
+        const project = await db_1.default.project.create({
+            data: {
+                name,
+                description,
+                ownerId: userId,
+                members: {
+                    connect: members.map((member) => ({ id: member.id })),
+                },
+            },
+            include: {
+                owner: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                members: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        tasks: true,
+                        messages: true,
+                    },
+                },
+            },
+        });
+        res.status(201).json({
+            success: true,
+            message: 'Project created successfully',
+            data: project,
+        });
     }
     catch (error) {
-        console.error('Error deleting project:', error);
-        res.status(500).json({ error: 'Failed to delete project' });
+        if (error instanceof zod_1.z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.errors,
+            });
+        }
+        console.error('Create project error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
+});
+// Get a specific project
+router.get('/:id', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const projectId = req.params.id;
+        const project = await db_1.default.project.findFirst({
+            where: {
+                id: projectId,
+                OR: [
+                    { ownerId: userId },
+                    { members: { some: { id: userId } } },
+                ],
+            },
+            include: {
+                owner: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                members: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                tasks: {
+                    include: {
+                        assignee: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            },
+                        },
+                        createdBy: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                },
+                messages: {
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                    take: 50, // Limit to last 50 messages
+                },
+            },
+        });
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found',
+            });
+        }
+        res.json({
+            success: true,
+            data: project,
+        });
+    }
+    catch (error) {
+        console.error('Get project error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
+});
+// Update a project
+router.put('/:id', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const projectId = req.params.id;
+        const updateData = updateProjectSchema.parse(req.body);
+        // Check if user owns the project
+        const existingProject = await db_1.default.project.findFirst({
+            where: {
+                id: projectId,
+                ownerId: userId,
+            },
+        });
+        if (!existingProject) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found or you do not have permission to update it',
+            });
+        }
+        // Handle member updates if provided
+        let updatePayload = {
+            name: updateData.name,
+            description: updateData.description,
+        };
+        if (updateData.memberEmails) {
+            // Find new members
+            const newMembers = await db_1.default.user.findMany({
+                where: {
+                    email: { in: updateData.memberEmails },
+                },
+                select: { id: true },
+            });
+            updatePayload.members = {
+                set: newMembers.map((member) => ({ id: member.id })),
+            };
+        }
+        const updatedProject = await db_1.default.project.update({
+            where: { id: projectId },
+            data: updatePayload,
+            include: {
+                owner: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                members: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
+                _count: {
+                    select: {
+                        tasks: true,
+                        messages: true,
+                    },
+                },
+            },
+        });
+        res.json({
+            success: true,
+            message: 'Project updated successfully',
+            data: updatedProject,
+        });
+    }
+    catch (error) {
+        if (error instanceof zod_1.z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation error',
+                errors: error.errors,
+            });
+        }
+        console.error('Update project error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
+    }
+});
+// Delete a project
+router.delete('/:id', async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const projectId = req.params.id;
+        // Check if user owns the project
+        const project = await db_1.default.project.findFirst({
+            where: {
+                id: projectId,
+                ownerId: userId,
+            },
+        });
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found or you do not have permission to delete it',
+            });
+        }
+        // Delete the project (cascade will handle related records)
+        await db_1.default.project.delete({
+            where: { id: projectId },
+        });
+        res.json({
+            success: true,
+            message: 'Project deleted successfully',
+        });
+    }
+    catch (error) {
+        console.error('Delete project error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
+        });
     }
 });
 exports.default = router;

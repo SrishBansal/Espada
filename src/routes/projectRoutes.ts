@@ -104,7 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
         description,
         ownerId: userId,
         members: {
-          connect: members.map(member => ({ id: member.id })),
+          connect: members.map((member: any) => ({ id: member.id })),
         },
       },
       include: {
@@ -279,7 +279,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       });
 
       updatePayload.members = {
-        set: newMembers.map(member => ({ id: member.id })),
+        set: newMembers.map((member: any) => ({ id: member.id })),
       };
     }
 

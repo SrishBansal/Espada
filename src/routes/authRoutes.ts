@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+const jwt = require('jsonwebtoken');
 import { z } from 'zod';
 import prisma from '../config/db';
 import { jwtConfig } from '../config/env';
@@ -59,7 +59,7 @@ router.post('/signup', async (req: Request, res: Response) => {
       { userId: user.id, email: user.email },
       jwtConfig.secret,
       { expiresIn: jwtConfig.expiresIn }
-    );
+    ) as string;
 
     res.status(201).json({
       success: true,
@@ -118,7 +118,7 @@ router.post('/login', async (req: Request, res: Response) => {
       { userId: user.id, email: user.email },
       jwtConfig.secret,
       { expiresIn: jwtConfig.expiresIn }
-    );
+    ) as string;
 
     // Return user data without password
     const { password: _, ...userWithoutPassword } = user;
