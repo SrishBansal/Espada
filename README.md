@@ -50,29 +50,25 @@ The server will run on `http://localhost:5000`
 ### Health Check
 - `GET /health` - Server health status
 
-### Users
-- `GET /api/users` - Get all users
-- `GET /api/users/:id` - Get user by ID
-- `POST /api/users` - Create new user
-- `PUT /api/users/:id` - Update user
-- `DELETE /api/users/:id` - Delete user
+### Authentication
+- `POST /auth/signup` - Create new user (name, email, password)
+- `POST /auth/login` - Login user (email, password) → returns JWT token
 
-### Projects
-- `GET /api/projects` - Get all projects
-- `GET /api/projects/:id` - Get project by ID
-- `POST /api/projects` - Create new project
-- `PUT /api/projects/:id` - Update project
-- `DELETE /api/projects/:id` - Delete project
+### Projects (Protected - requires JWT token)
+- `GET /projects` - List projects for logged-in user
+- `POST /projects` - Create new project (name, description, members)
+- `GET /projects/:id` - Fetch single project details
+- `PUT /projects/:id` - Update project
+- `DELETE /projects/:id` - Delete project
 
-### Tasks
-- `GET /api/tasks` - Get all tasks
-- `GET /api/tasks/project/:projectId` - Get tasks by project
-- `GET /api/tasks/:id` - Get task by ID
-- `POST /api/tasks` - Create new task
-- `PUT /api/tasks/:id` - Update task
-- `DELETE /api/tasks/:id` - Delete task
+### Tasks (Protected - requires JWT token)
+- `GET /tasks/projects/:projectId/tasks` - List tasks in that project
+- `POST /tasks/projects/:projectId/tasks` - Add new task (title, description, assignee, dueDate, status)
+- `PATCH /tasks/:id` - Update task (status, description, etc.)
+- `GET /tasks/:id` - Get single task
+- `DELETE /tasks/:id` - Delete task
 
-### Messages
+### Messages (Protected - requires JWT token)
 - `GET /api/messages/project/:projectId` - Get messages by project
 - `GET /api/messages/:id` - Get message by ID
 - `POST /api/messages` - Create new message
@@ -86,12 +82,15 @@ Connect to the `/messages` namespace for real-time project chat:
 ### Events
 
 **Client to Server:**
-- `join-project` - Join a project room
-- `leave-project` - Leave a project room
-- `send-message` - Send a message to project room
+- `joinProject` - Join a project room (projectId, userId)
+- `leaveProject` - Leave a project room (projectId, userId)
+- `sendMessage` - Send a message to project room (projectId, senderId, text)
 
 **Server to Client:**
-- `new-message` - Receive new message in project room
+- `newMessage` - Receive new message in project room
+- `userJoined` - User joined the project room
+- `userLeft` - User left the project room
+- `error` - Error message
 
 ### Example Usage
 
@@ -99,18 +98,31 @@ Connect to the `/messages` namespace for real-time project chat:
 const socket = io('/messages');
 
 // Join a project room
-socket.emit('join-project', 'project-123');
+socket.emit('joinProject', {
+  projectId: '123',
+  userId: '456'
+});
 
 // Send a message
-socket.emit('send-message', {
+socket.emit('sendMessage', {
   projectId: '123',
-  content: 'Hello team!',
-  senderId: '456'
+  senderId: '456',
+  text: 'Hello team!'
 });
 
 // Listen for new messages
-socket.on('new-message', (data) => {
+socket.on('newMessage', (data) => {
   console.log('New message:', data);
+  // data contains: { id, content, sender, projectId, timestamp }
+});
+
+// Listen for user events
+socket.on('userJoined', (data) => {
+  console.log('User joined:', data.userId);
+});
+
+socket.on('userLeft', (data) => {
+  console.log('User left:', data.userId);
 });
 ```
 
@@ -128,6 +140,36 @@ socket.on('new-message', (data) => {
 ### Message
 - id, content, messageType, projectId, senderId, replyToId, isEdited
 
+## Authentication
+
+The API uses JWT (JSON Web Tokens) for authentication. Include the token in the Authorization header:
+
+```
+Authorization: Bearer <your-jwt-token>
+```
+
+### Example Authentication Flow
+
+1. **Signup:**
+```bash
+curl -X POST http://localhost:5000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John Doe", "email": "john@example.com", "password": "password123"}'
+```
+
+2. **Login:**
+```bash
+curl -X POST http://localhost:5000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "john@example.com", "password": "password123"}'
+```
+
+3. **Use token in protected routes:**
+```bash
+curl -X GET http://localhost:5000/projects \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
 ## Environment Variables
 
 Create a `.env` file:
@@ -135,6 +177,7 @@ Create a `.env` file:
 PORT=5000
 NODE_ENV=development
 DB_PATH=./database.sqlite
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
 ```
 
 ## Project Structure

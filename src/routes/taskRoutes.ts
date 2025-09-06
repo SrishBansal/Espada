@@ -1,76 +1,82 @@
 import { Router, Request, Response } from 'express';
 import { Task, Project, User } from '../models';
+import { authenticateToken } from '../middleware/auth';
+import { validateTask } from '../middleware/validation';
+
+interface AuthRequest extends Request {
+  user?: any;
+}
 
 const router = Router();
 
-// GET /api/tasks - Get all tasks
-router.get('/', async (req: Request, res: Response) => {
+// GET /projects/:id/tasks - List tasks in that project
+router.get('/projects/:projectId/tasks', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const tasks = await Task.findAll({
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
-        { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
-      ]
-    });
-    res.json(tasks);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
-});
-
-// GET /api/tasks/project/:projectId - Get tasks by project
-router.get('/project/:projectId', async (req: Request, res: Response) => {
-  try {
-    const tasks = await Task.findAll({
-      where: { projectId: req.params.projectId },
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
-        { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
-      ]
-    });
-    res.json(tasks);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
-});
-
-// GET /api/tasks/:id - Get task by ID
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const task = await Task.findByPk(req.params.id, {
-      include: [
-        { model: Project, as: 'project', attributes: ['id', 'name'] },
-        { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
-        { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
-      ]
-    });
+    const projectId = req.params.projectId;
+    const userId = req.user.id;
     
-    if (!task) {
-      return res.status(404).json({ error: 'Task not found' });
+    // First check if user has access to this project
+    const project = await Project.findByPk(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
     }
     
-    res.json(task);
+    if (project.ownerId !== userId) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    const tasks = await Task.findAll({
+      where: { projectId },
+      include: [
+        { model: Project, as: 'project', attributes: ['id', 'name'] },
+        { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
+        { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+    
+    res.json(tasks);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch task' });
+    console.error('Error fetching tasks:', error);
+    res.status(500).json({ error: 'Failed to fetch tasks' });
   }
 });
 
-// POST /api/tasks - Create new task
-router.post('/', async (req: Request, res: Response) => {
+// POST /projects/:id/tasks - Add new task
+router.post('/projects/:projectId/tasks', authenticateToken, validateTask, async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, status, priority, dueDate, projectId, assigneeId, createdById } = req.body;
+    const projectId = req.params.projectId;
+    const userId = req.user.id;
+    const { title, description, assignee, dueDate, status } = req.body;
+    
+    // First check if user has access to this project
+    const project = await Project.findByPk(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    if (project.ownerId !== userId) {
+      return res.status(403).json({ error: 'Access denied to this project' });
+    }
+    
+    // Find assignee user if provided
+    let assigneeId = null;
+    if (assignee) {
+      const assigneeUser = await User.findOne({ where: { username: assignee } });
+      if (assigneeUser) {
+        assigneeId = assigneeUser.id;
+      }
+    }
     
     const task = await Task.create({
       title,
-      description,
+      description: description || '',
       status: status || 'todo',
-      priority: priority || 'medium',
-      dueDate,
-      projectId,
-      assigneeId,
-      createdById,
+      priority: 'medium',
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      projectId: parseInt(projectId),
+      assigneeId: assigneeId || undefined,
+      createdById: userId,
     });
     
     // Fetch the created task with associations
@@ -82,28 +88,53 @@ router.post('/', async (req: Request, res: Response) => {
       ]
     });
     
-    res.status(201).json(createdTask);
+    res.status(201).json({
+      message: 'Task created successfully',
+      task: createdTask
+    });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to create task' });
+    console.error('Error creating task:', error);
+    res.status(500).json({ error: 'Failed to create task' });
   }
 });
 
-// PUT /api/tasks/:id - Update task
-router.put('/:id', async (req: Request, res: Response) => {
+// PATCH /tasks/:id - Update task
+router.patch('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, status, priority, dueDate, assigneeId } = req.body;
+    const taskId = req.params.id;
+    const userId = req.user.id;
+    const { title, description, status, priority, dueDate, assignee } = req.body;
     
-    const task = await Task.findByPk(req.params.id);
+    const task = await Task.findByPk(taskId, {
+      include: [{ model: Project, as: 'project' }]
+    });
+    
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
     
+    // Check if user has access to the project this task belongs to
+    if ((task as any).project && (task as any).project.ownerId !== userId) {
+      return res.status(403).json({ error: 'Access denied to this task' });
+    }
+    
+    // Find assignee user if provided
+    let assigneeId = task.assigneeId;
+    if (assignee !== undefined) {
+      if (assignee) {
+        const assigneeUser = await User.findOne({ where: { username: assignee } });
+        assigneeId = assigneeUser ? assigneeUser.id : undefined;
+      } else {
+        assigneeId = undefined;
+      }
+    }
+    
     await task.update({
-      title,
-      description,
-      status,
-      priority,
-      dueDate,
+      title: title || task.title,
+      description: description !== undefined ? description : task.description,
+      status: status || task.status,
+      priority: priority || task.priority,
+      dueDate: dueDate ? new Date(dueDate) : task.dueDate,
       assigneeId,
     });
     
@@ -116,23 +147,69 @@ router.put('/:id', async (req: Request, res: Response) => {
       ]
     });
     
-    res.json(updatedTask);
+    res.json({
+      message: 'Task updated successfully',
+      task: updatedTask
+    });
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update task' });
+    console.error('Error updating task:', error);
+    res.status(500).json({ error: 'Failed to update task' });
   }
 });
 
-// DELETE /api/tasks/:id - Delete task
-router.delete('/:id', async (req: Request, res: Response) => {
+// GET /tasks/:id - Get single task
+router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const task = await Task.findByPk(req.params.id);
+    const taskId = req.params.id;
+    const userId = req.user.id;
+    
+    const task = await Task.findByPk(taskId, {
+      include: [
+        { model: Project, as: 'project' },
+        { model: User, as: 'assignee', attributes: ['id', 'username', 'firstName', 'lastName'] },
+        { model: User, as: 'creator', attributes: ['id', 'username', 'firstName', 'lastName'] }
+      ]
+    });
+    
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    // Check if user has access to the project this task belongs to
+    if ((task as any).project && (task as any).project.ownerId !== userId) {
+      return res.status(403).json({ error: 'Access denied to this task' });
+    }
+    
+    res.json(task);
+  } catch (error) {
+    console.error('Error fetching task:', error);
+    res.status(500).json({ error: 'Failed to fetch task' });
+  }
+});
+
+// DELETE /tasks/:id - Delete task
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const userId = req.user.id;
+    
+    const task = await Task.findByPk(taskId, {
+      include: [{ model: Project, as: 'project' }]
+    });
+    
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    // Check if user has access to the project this task belongs to
+    if ((task as any).project && (task as any).project.ownerId !== userId) {
+      return res.status(403).json({ error: 'Access denied to this task' });
     }
     
     await task.destroy();
     res.status(204).send();
   } catch (error) {
+    console.error('Error deleting task:', error);
     res.status(500).json({ error: 'Failed to delete task' });
   }
 });
